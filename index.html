@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Registrar Asistencia - QR</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      max-width: 600px;
+      margin: 20px auto;
+      padding: 0 15px;
+      text-align: center;
+      background: #f8f9fa;
+    }
+    h2 {
+      color: #007bff;
+      margin-bottom: 20px;
+    }
+    #video {
+      width: 100%;
+      max-width: 500px;
+      border: 2px solid #007bff;
+      border-radius: 12px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    #status {
+      margin-top: 18px;
+      font-size: 18px;
+      min-height: 28px;
+      font-weight: 600;
+    }
+    .success { color: #28a745; }
+    .error { color: #dc3545; }
+    .info { color: #6c757d; }
+  </style>
+</head>
+<body>
+  <h2>Registrar Asistencia por QR</h2>
+  <video id="video"></video>
+  <div id="status">Esperando QR...</div>
+
+  <script src="https://unpkg.com/qr-scanner@1.4.2/qr-scanner.min.js"></script>
+  <script>
+    // 🔁 PEGA AQUÍ LA URL DE TU WEB APP DE APPS SCRIPT
+    const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwKehgE_sBn695HHJy1TLulMbyFGYI-K-rlAqu0JFq7_DFrx5NSrQv112BmwFW7qvGq/exec"; // ← ¡CAMBIA ESTO!
+
+    const video = document.getElementById('video');
+    const status = document.getElementById('status');
+
+    // Validación simple: debe contener "_" y parecer un código válido
+    function isValidQR(text) {
+      return text && text.includes('_') && text.length >= 10;
+    }
+
+    const scanner = new QrScanner(video, async (result) => {
+      if (!isValidQR(result)) {
+        status.innerHTML = '<span class="error">QR inválido</span>';
+        return;
+      }
+
+      status.innerHTML = 'Registrando...';
+      try {
+        const response = await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          body: new URLSearchParams({ qr: result })
+        });
+        const data = await response.json();
+
+        if (data.success) {
+          status.innerHTML = `<span class="success">✅ ¡Registrado!<br><small>${result}</small></span>`;
+          scanner.stop();
+          setTimeout(() => {
+            status.innerHTML = 'Escaneando otro...';
+            scanner.start();
+          }, 2500);
+        } else {
+          status.innerHTML = `<span class="error">❌ Error: ${data.error || 'No registrado'}</span>`;
+          setTimeout(() => { status.innerHTML = 'Reintentando...'; }, 2000);
+        }
+      } catch (err) {
+        status.innerHTML = '<span class="error">⚠️ Error de conexión</span>';
+        console.error(err);
+      }
+    }, {
+      highlightScanRegion: true,
+      highlightCodeOutline: true
+    });
+
+    // Manejo de errores de cámara
+    scanner.start().catch(err => {
+      status.innerHTML = '<span class="error">⚠️ Acceso a cámara denegado o no disponible</span>';
+      console.error(err);
+    });
+  </script>
+</body>
+</html>
