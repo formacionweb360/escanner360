@@ -334,14 +334,21 @@
     let lastScanTime = 0;
     const SCAN_COOLDOWN = 3000;
 
-function isValidQR(text) {
-  if (!text || typeof text !== "string") return false;
-  const parts = text.split('_');
-  if (parts.length !== 2) return false;
-  const id = parts[0];
-  const dni = parts[1];
-  return id.length >= 1 && /^\d{6,10}$/.test(dni);
-}
+    function isValidQR(text) {
+      if (!text || typeof text !== 'string') return false;
+      const parts = text.split('_');
+      if (parts.length !== 2) return false;
+
+      const [prefix, dni] = parts;
+
+      // Prefijo: alfanumérico, no vacío
+      if (!prefix || !/^[a-zA-Z0-9]+$/.test(prefix)) return false;
+
+      // DNI: debe tener entre 6 y 10 dígitos, solo números
+      if (!dni || !/^\d{6,10}$/.test(dni)) return false;
+
+      return true;
+    }
 
     async function sendToSheet(qrCode) {
       const now = Date.now();
