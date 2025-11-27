@@ -17,13 +17,18 @@
       color: #007bff;
       margin-bottom: 20px;
     }
-    #video {
+    #videoContainer {
+      position: relative;
       width: 100%;
       max-width: 500px;
+      margin: 0 auto;
+      display: none;
+    }
+    #video {
+      width: 100%;
       border: 2px solid #007bff;
       border-radius: 12px;
       box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-      display: none; /* Oculto hasta que se active */
     }
     #status {
       margin-top: 18px;
@@ -34,95 +39,205 @@
     .success { color: #28a745; }
     .error { color: #dc3545; }
     .info { color: #6c757d; }
-    #startButton {
+    #startButton, #stopButton {
       background: #007bff;
       color: white;
       border: none;
-      padding: 10px 20px;
+      padding: 12px 24px;
       border-radius: 8px;
       cursor: pointer;
       font-size: 16px;
-      margin-top: 10px;
+      margin: 10px 5px;
+      transition: background 0.3s;
     }
-    #startButton:hover {
+    #startButton:hover, #stopButton:hover {
       background: #0056b3;
+    }
+    #stopButton {
+      background: #dc3545;
+      display: none;
+    }
+    #stopButton:hover {
+      background: #c82333;
+    }
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #007bff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      vertical-align: middle;
+      margin-left: 10px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
     }
   </style>
 </head>
 <body>
-  <h2>Registrar Asistencia por QR</h2>
-  <button id="startButton">▶️ Activar cámara</button>
-  <video id="video"></video>
-  <div id="status">Esperando QR...</div>
+  <h2>📱 Registrar Asistencia por QR</h2>
+  
+  <button id="startButton">▶️ Activar Cámara</button>
+  <button id="stopButton">⏹️ Detener Cámara</button>
+  
+  <div id="videoContainer">
+    <video id="video" playsinline></video>
+  </div>
+  
+  <div id="status" class="info">Presiona el botón para iniciar</div>
 
-  <script src="https://unpkg.com/qr-scanner@1.4.2/qr-scanner.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   <script>
-    // 🔁 PEGA AQUÍ LA URL DE TU WEB APP DE APPS SCRIPT (sin espacios!)
+    // 🔁 PEGA AQUÍ LA URL DE TU WEB APP DE APPS SCRIPT
     const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwKehgE_sBn695HHJy1TLulMbyFGYI-K-rlAqu0JFq7_DFrx5NSrQv112BmwFW7qvGq/exec";
-
+    
     const video = document.getElementById('video');
+    const videoContainer = document.getElementById('videoContainer');
     const status = document.getElementById('status');
     const startButton = document.getElementById('startButton');
+    const stopButton = document.getElementById('stopButton');
+    
+    let stream = null;
+    let scanning = false;
+    let lastScannedCode = '';
+    let lastScanTime = 0;
+    const SCAN_COOLDOWN = 3000; // 3 segundos entre escaneos del mismo código
 
-    let scanner = null;
-
-    // Validación simple: debe contener "_" y parecer un código válido
+    // Validación del código QR
     function isValidQR(text) {
       return text && text.includes('_') && text.length >= 10;
     }
 
-    // Función para iniciar la cámara y el escáner
-    function startScanner() {
-      if (scanner) return; // Ya está iniciado
-
-      scanner = new QrScanner(video, async (result) => {
-        if (!isValidQR(result)) {
-          status.innerHTML = '<span class="error">QR inválido</span>';
-          return;
-        }
-
-        status.innerHTML = 'Registrando...';
-        try {
-          const response = await fetch(APPS_SCRIPT_URL, {
-            method: 'POST',
-            body: new URLSearchParams({ qr: result })
-          });
-          const data = await response.json();
-
-          if (data.success) {
-            status.innerHTML = `<span class="success">✅ ¡Registrado!<br><small>${result}</small></span>`;
-            // Opcional: detener después de éxito
-            scanner.stop();
-            startButton.style.display = 'inline-block'; // Volver a mostrar botón
-            video.style.display = 'none'; // Ocultar video
-          } else {
-            status.innerHTML = `<span class="error">❌ Error: ${data.error || 'No registrado'}</span>`;
+    // Función para enviar datos a Google Apps Script
+    async function sendToSheet(qrCode) {
+      const now = Date.now();
+      
+      // Evitar escaneos duplicados rápidos
+      if (qrCode === lastScannedCode && (now - lastScanTime) < SCAN_COOLDOWN) {
+        return;
+      }
+      
+      lastScannedCode = qrCode;
+      lastScanTime = now;
+      
+      status.innerHTML = '⏳ Registrando... <span class="loading"></span>';
+      
+      try {
+        const response = await fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({ qr: qrCode })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          status.innerHTML = `<span class="success">✅ ¡Registrado exitosamente!<br><small>${qrCode}</small></span>`;
+          
+          // Vibrar si está disponible
+          if (navigator.vibrate) {
+            navigator.vibrate(200);
           }
-        } catch (err) {
-          status.innerHTML = '<span class="error">⚠️ Error de conexión</span>';
-          console.error(err);
+        } else {
+          status.innerHTML = `<span class="error">❌ Error: ${data.error || 'No se pudo registrar'}</span>`;
         }
-      }, {
-        highlightScanRegion: true,
-        highlightCodeOutline: true
-      });
-
-      // Mostrar video y ocultar botón
-      video.style.display = 'block';
-      startButton.style.display = 'none';
-
-      // Iniciar escáner
-      scanner.start().catch(err => {
-        status.innerHTML = '<span class="error">⚠️ Acceso a cámara denegado o no disponible</span>';
-        console.error(err);
-        // Volver a mostrar botón si falla
-        startButton.style.display = 'inline-block';
-        video.style.display = 'none';
-      });
+      } catch (err) {
+        status.innerHTML = '<span class="error">⚠️ Error de conexión con el servidor</span>';
+        console.error('Error:', err);
+      }
     }
 
-    // Evento del botón
+    // Función principal de escaneo
+    function scanQRCode() {
+      if (!scanning) return;
+
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvas.height = video.videoHeight;
+        canvas.width = video.videoWidth;
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: "dontInvert",
+        });
+
+        if (code && code.data) {
+          if (isValidQR(code.data)) {
+            sendToSheet(code.data);
+          } else {
+            status.innerHTML = '<span class="error">⚠️ QR inválido detectado</span>';
+          }
+        }
+      }
+
+      requestAnimationFrame(scanQRCode);
+    }
+
+    // Iniciar cámara y escaneo
+    async function startScanner() {
+      try {
+        status.innerHTML = '<span class="info">🔄 Iniciando cámara...</span>';
+        
+        // Solicitar acceso a la cámara
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: "environment" } // Usar cámara trasera en móviles
+        });
+        
+        video.srcObject = stream;
+        video.setAttribute("playsinline", true);
+        video.play();
+        
+        scanning = true;
+        videoContainer.style.display = 'block';
+        startButton.style.display = 'none';
+        stopButton.style.display = 'inline-block';
+        
+        status.innerHTML = '<span class="info">📷 Escaneando... Apunta al código QR</span>';
+        
+        requestAnimationFrame(scanQRCode);
+        
+      } catch (err) {
+        console.error('Error al acceder a la cámara:', err);
+        status.innerHTML = '<span class="error">❌ No se pudo acceder a la cámara<br><small>Verifica los permisos del navegador</small></span>';
+        stopScanner();
+      }
+    }
+
+    // Detener cámara y escaneo
+    function stopScanner() {
+      scanning = false;
+      
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+      }
+      
+      video.srcObject = null;
+      videoContainer.style.display = 'none';
+      startButton.style.display = 'inline-block';
+      stopButton.style.display = 'none';
+      
+      status.innerHTML = '<span class="info">Cámara detenida</span>';
+    }
+
+    // Event listeners
     startButton.addEventListener('click', startScanner);
+    stopButton.addEventListener('click', stopScanner);
+
+    // Detener cámara al cerrar/cambiar de pestaña
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && scanning) {
+        stopScanner();
+      }
+    });
   </script>
 </body>
 </html>
