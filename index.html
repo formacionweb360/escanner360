@@ -334,9 +334,14 @@
     let lastScanTime = 0;
     const SCAN_COOLDOWN = 3000;
 
-    function isValidQR(text) {
-      return text && text.includes('_') && text.length >= 10;
-    }
+function isValidQR(text) {
+  if (!text || typeof text !== "string") return false;
+  const parts = text.split('_');
+  if (parts.length !== 2) return false;
+  const id = parts[0];
+  const dni = parts[1];
+  return id.length >= 1 && /^\d{6,10}$/.test(dni);
+}
 
     async function sendToSheet(qrCode) {
       const now = Date.now();
